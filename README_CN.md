@@ -1,5 +1,7 @@
 # ldnss — 音频响度分析器
 
+[中文](https://github.com/zighuw/ldnss/README_CN.md) | [English](https://github.com/zighuw/ldnss/README.md)
+
 一款 Windows (MSYS2/MinGW) 桌面应用程序，用于离线与实时的音频响度分析，
 符合 **ITU-R BS.1770-4**（EBU R128）标准。同时提供图形界面和命令行工具。
 
