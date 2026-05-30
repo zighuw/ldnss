@@ -1,6 +1,6 @@
 # ldnss — Audio Loudness Analyzer
 
-[中文](https://github.com/zighuw/ldnss/README_CN.md) | [English](https://github.com/zighuw/ldnss/README.md)
+[中文](https://github.com/zighuw/ldnss/blob/main/README_CN.md) | [English](https://github.com/zighuw/ldnss/blob/main/README.md)
 
 A Windows (MSYS2/MinGW) desktop application for offline and real-time audio
 loudness analysis compliant with **ITU-R BS.1770-4** (EBU R128).  Provides both
