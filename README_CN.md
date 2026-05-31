@@ -1,7 +1,5 @@
 # ldnss — 音频响度分析器
 
-[中文](https://github.com/zighuw/ldnss/blob/main/README_CN.md) | [English](https://github.com/zighuw/ldnss/blob/main/README.md)
-
 一款 Windows (MSYS2/MinGW) 桌面应用程序，用于离线与实时的音频响度分析，
 符合 **ITU-R BS.1770-4**（EBU R128）标准。同时提供图形界面和命令行工具。
 
@@ -14,7 +12,7 @@
 - **拖放支持** — 支持 WAV、FLAC、Ogg、MP3、AIFF 格式
 - **最近文件** — 通过 QSettings 持久化保存最近 10 个文件
 - **静态链接** — libsndfile、7 个编解码器和 PortAudio 全部编译进程序（除 Qt 和 MSYS2 运行时外无需额外 DLL）
-- **UPX 压缩** — 发布的二进制文件压缩率约 67%，插件无运行时开销
+- **UPX 压缩** — EXE 和非插件 DLL 压缩率约 55-60%（UPX NRV）；插件 DLL 保持未压缩以确保 Qt 加载器兼容性
 
 ## 架构
 
@@ -98,10 +96,10 @@ ctest --test-dir build --output-on-failure
 | 2 | 复制可执行文件 |
 | 3 | `windeployqt` + 移除未使用的插件 |
 | 4 | 复制 24 个非 Qt 运行时 DLL |
-| 5 | 对所有顶层二进制文件执行 UPX `--best --lzma` |
+| 5 | UPX `--best`（NRV）压缩 EXE 和非插件 DLL |
 | 6 | 清理 `build/` |
 
-最终输出：**36 个文件，约 29 MB**，位于 `output/` 目录。
+最终输出：**36 个文件，约 36 MB**，位于 `output/` 目录。
 
 ## 使用说明
 
@@ -149,8 +147,8 @@ Loudness Range:   3.7 LU
 
 ```
 Playing music.wav (44100 Hz, 2 ch, 197.4 s)
-[  3.2s] TP:  -1.4  St: -13.1  Mo: -11.2
-[  3.5s] TP:  -1.3  St: -13.0  Mo: -11.0
+  TP: +0.5 dBTP  |  St: -13.1 LUFS  |  Mo: -11.2 LUFS
+  TP: +0.6 dBTP  |  St: -13.0 LUFS  |  Mo: -11.0 LUFS
 ```
 
 ## 项目结构
@@ -175,6 +173,7 @@ ldnss/
 │   │   ├── LoudnessAnalyzer.h/cpp
 │   │   ├── LoudnessResult.h
 │   │   ├── LiveMeter.h/cpp
+│   │   ├── TruePeakMeter.h/cpp  # 自定义 4× 过采样器（Kaiser 滤波器）
 │   │   └── RingBuffer.h        # 无锁 SPSC 队列
 │   ├── playback/               # PortAudio + Qt6::Core
 │   │   ├── AudioPlayer.h/cpp
@@ -211,9 +210,13 @@ ldnss/
 
 ## 技术说明
 
-- **EBU R128 合规性**：核心分析使用 `libebur128`，离线模式为
-  `EBUR128_MODE_I | LRA | TRUE_PEAK | SAMPLE_PEAK`，实时监测模式为
-  `EBUR128_MODE_M | MODE_S | TRUE_PEAK`。
+- **EBU R128 合规性**：离线分析使用 `libebur128`，模式为
+  `EBUR128_MODE_I | LRA | TRUE_PEAK`，用于综合 LUFS、LRA 和内部真峰值；
+  实时监测使用 `EBUR128_MODE_S`，仅用于同时测量瞬时（400 ms）和短时（3 s）LUFS。
+- **自定义真峰值过采样器**（`TruePeakMeter`）：采用双精度 128 抽头
+  Kaiser 窗多相 FIR 滤波器（4× 过采样，β=8，~80 dB 阻带衰减），替代
+  libebur128 的浮点精度 49 抽头 Hamming FIR，用于最终的 dBTP 读数。
+  所有分析全程使用双精度以最小化累积舍入噪声。
 - **实时安全性**：PortAudio 回调仅调用 `decoder->readFrames`、
   `meter->process` 和 `ringBuffer->write`。无堆分配、无锁获取、
   无异常抛出、无 Qt 信号发射。
@@ -223,8 +226,9 @@ ldnss/
 - **静态链接**：通过 CMake `INTERFACE` 库封装 `libsndfile.a` 和
   `libportaudio.a`（外加 7 个编解码器 `.a` 文件：mp3lame、FLAC、vorbisenc、
   vorbis、ogg、opus、mpg123）。这从输出目录中消除了 9 个独立的 DLL 文件。
-- **UPX 安全性**：Qt 插件 DLL（`platforms/`、`imageformats/`、`styles/`）
-  不得用 UPX 压缩 — Qt 插件加载器依赖特定的 PE 结构，UPX 会对其进行修改。
-  仅压缩顶层 EXE 和 DLL。
+- **UPX 安全性**：压缩 EXE 和非插件 DLL 文件（UPX `--best`，NRV 算法）。
+  `platforms/`、`imageformats/`、`styles/` 中的插件 DLL 保持未压缩 —
+  UPX 压缩可能破坏 Qt 插件加载器依赖的 PE 结构。同时避免使用 LZMA
+  压缩，因其在 UPX 5.1.1 下曾产生损坏的 EXE（STATUS_DLL_INIT_FAILED）。
 - **WIN32 子系统**：GUI 可执行文件使用 `WIN32` 标志构建，使 Windows
   不会在 GUI 窗口旁弹出控制台窗口。CLI 可执行文件使用默认的 `CONSOLE` 子系统。

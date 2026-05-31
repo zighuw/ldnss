@@ -110,7 +110,7 @@ echo "   Copied $COPIED non-Qt DLL(s)"
 
 # ------------------------------------------------------------------
 # 5. UPX compress
-#     Compress all EXEs and top-level DLLs.
+#     Compress all EXEs and top-level DLLs with UPX --best (NRV only).
 #     Plugin DLLs in platforms/ imageformats/ styles/ are SKIPPED —
 #     UPX corrupts the PE structure that Qt's plugin loader depends on.
 # ------------------------------------------------------------------
@@ -118,8 +118,10 @@ echo ""
 echo "[5/6] Compressing with UPX --best (NRV, no LZMA)..."
 # --lzma (LZMA) can produce corrupted EXEs with this UPX version (5.1.1),
 # causing STATUS_DLL_INIT_FAILED (0xc0000142). NRV is stable.
-# Only compress EXEs — UPX on DLLs can also corrupt PE structures.
+# Non-plugin DLLs have been tested end-to-end with UPX NRV — they load and
+# run correctly (libebur128, ICU, libstdc++, Qt runtime, etc.).
 upx --best "$OUTPUT_DIR"/*.exe
+upx --best "$OUTPUT_DIR"/*.dll
 
 # ------------------------------------------------------------------
 # Summary

@@ -1,7 +1,5 @@
 # ldnss — Audio Loudness Analyzer
 
-[中文](https://github.com/zighuw/ldnss/blob/main/README_CN.md) | [English](https://github.com/zighuw/ldnss/blob/main/README.md)
-
 A Windows (MSYS2/MinGW) desktop application for offline and real-time audio
 loudness analysis compliant with **ITU-R BS.1770-4** (EBU R128).  Provides both
 a graphical interface and a command-line tool.
@@ -19,8 +17,8 @@ a graphical interface and a command-line tool.
 - **Recent files** — last 10 files persisted via QSettings
 - **Static linking** — libsndfile, 7 codecs, and PortAudio are compiled in
   (zero "extra" DLLs beyond Qt and the MSYS2 runtime)
-- **UPX compressed** — shipped binaries are compressed ~67% with no runtime
-  overhead for plugins
+- **UPX compressed** — EXEs and non-plugin DLLs compressed ~55–60% (UPX NRV);
+  plugin DLLs left uncompressed for Qt loader compatibility
 
 ## Architecture
 
@@ -108,10 +106,10 @@ The two scripts split the pipeline into build and package phases:
 | 2 | Copy executables |
 | 3 | `windeployqt` + remove unused plugins |
 | 4 | Copy 24 non-Qt runtime DLLs |
-| 5 | UPX `--best --lzma` on all top-level binaries |
+| 5 | UPX `--best` (NRV) on EXEs and non-plugin DLLs |
 | 6 | Clean `build/` |
 
-Final output: **36 files, ~29 MB** in `output/`.
+Final output: **36 files, ~36 MB** in `output/`.
 
 ## Usage
 
@@ -159,8 +157,8 @@ Loudness Range:   3.7 LU
 
 ```
 Playing music.wav (44100 Hz, 2 ch, 197.4 s)
-[  3.2s] TP:  -1.4  St: -13.1  Mo: -11.2
-[  3.5s] TP:  -1.3  St: -13.0  Mo: -11.0
+  TP: +0.5 dBTP  |  St: -13.1 LUFS  |  Mo: -11.2 LUFS
+  TP: +0.6 dBTP  |  St: -13.0 LUFS  |  Mo: -11.0 LUFS
 ```
 
 ## Project Structure
@@ -185,6 +183,7 @@ ldnss/
 │   │   ├── LoudnessAnalyzer.h/cpp
 │   │   ├── LoudnessResult.h
 │   │   ├── LiveMeter.h/cpp
+│   │   ├── TruePeakMeter.h/cpp  # custom 4× oversampler (Kaiser filter)
 │   │   └── RingBuffer.h        # lock-free SPSC queue
 │   ├── playback/               # PortAudio + Qt6::Core
 │   │   ├── AudioPlayer.h/cpp
@@ -221,9 +220,16 @@ Tests programmatically generate WAV files via libsndfile — no test assets need
 
 ## Technical Notes
 
-- **EBU R128 compliance**: Core analysis uses `libebur128` with modes
-  `EBUR128_MODE_I | LRA | TRUE_PEAK | SAMPLE_PEAK` for offline and
-  `EBUR128_MODE_M | MODE_S | TRUE_PEAK` for live metering.
+- **EBU R128 compliance**: Offline analysis uses `libebur128` with modes
+  `EBUR128_MODE_I | LRA | TRUE_PEAK` for integrated LUFS, LRA, and internal
+  true-peak; live metering uses `EBUR128_MODE_S` for simultaneous momentary
+  (400 ms) and short-term (3 s) LUFS only.
+- **Custom true-peak oversampler** (`TruePeakMeter`): A double-precision
+  128-tap Kaiser-windowed polyphase FIR filter (4× oversampling, β=8,
+  ~80 dB stopband attenuation) replaces libebur128's float-precision 49-tap
+  Hamming FIR for the final true-peak dBTP readings in both offline and live
+  paths.  All analysis runs in double precision throughout to minimise
+  accumulated rounding noise.
 - **Real-time safety**: The PortAudio callback only calls `decoder->readFrames`,
   `meter->process`, and `ringBuffer->write`.  No heap allocation, no lock
   acquisition, no exception throw, no Qt signal emission.
@@ -234,9 +240,12 @@ Tests programmatically generate WAV files via libsndfile — no test assets need
   files: mp3lame, FLAC, vorbisenc, vorbis, ogg, opus, mpg123) are pulled in
   via CMake `INTERFACE` library wrappers.  This eliminates 9 separate DLL files
   from the output directory.
-- **UPX safety**: Qt plugin DLLs (`platforms/`, `imageformats/`, `styles/`)
-  must NOT be UPX-compressed — the Qt plugin loader depends on specific PE
-  structure that UPX modifies.  Only top-level EXEs and DLLs are compressed.
+- **UPX safety**: EXEs and non-plugin DLLs are compressed (UPX `--best`,
+  NRV algorithm).  Plugin DLLs in `platforms/`, `imageformats/`, and
+  `styles/` are left uncompressed — UPX compression can corrupt PE
+  structures that the Qt plugin loader depends on.  LZMA compression is
+  also avoided as it produced corrupted EXEs (STATUS_DLL_INIT_FAILED)
+  with UPX 5.1.1.
 - **WIN32 subsystem**: The GUI executable is built with the `WIN32` flag so
   Windows does not spawn a console window alongside the GUI.  The CLI
   executable uses the default `CONSOLE` subsystem.
